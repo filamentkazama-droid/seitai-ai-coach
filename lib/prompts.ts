@@ -16,11 +16,15 @@ export const analysisSystemPrompt = `
 - 本人の話し方を維持した改善例
 - トップスタッフの模範トーク
 - トップスタッフ比較
+- 過去学習データがある場合は、前回までの弱点と今回の変化を踏まえた継続指導
 `;
 
-export function buildAnalysisPrompt(transcript: string) {
+export function buildAnalysisPrompt(transcript: string, learningContext?: string) {
   return `
 以下の文字起こしを分析してください。
+
+過去学習データ:
+${learningContext || "なし"}
 
 文字起こし:
 ${transcript}

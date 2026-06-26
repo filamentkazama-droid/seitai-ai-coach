@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-const examples = ["契約率を上げたい", "佐藤スタッフの弱点は？", "最近失注が増えた理由は？", "今月何を改善するべき？"];
+const examples = ["契約率を上げたい", "スタッフAの弱点は？", "最近失注が増えた理由は？", "今月何を改善するべき？"];
 
 export default function CoachPage() {
   const [messages, setMessages] = useState([
-    { role: "assistant", content: "今月は料金説明前の価値提示が契約率に最も影響しています。スタッフ別に見ると、田中さんは確認質問を増やすと改善幅が大きいです。" }
+    { role: "assistant", content: "今月は料金説明前の価値提示が契約率に最も影響しています。スタッフ別に見ると、スタッフBは確認質問を増やすと改善幅が大きいです。" }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);

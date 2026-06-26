@@ -9,6 +9,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const transcript = String(body.transcript ?? "").trim();
+    const learningContext = String(body.learningContext ?? "").trim();
 
     if (transcript.length < 5) {
       return NextResponse.json({ error: "分析する文字起こしを入力してください。" }, { status: 400 });
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
       temperature: 0.2,
       messages: [
         { role: "system", content: analysisSystemPrompt },
-        { role: "user", content: buildAnalysisPrompt(transcript) }
+        { role: "user", content: buildAnalysisPrompt(transcript, learningContext) }
       ]
     });
 

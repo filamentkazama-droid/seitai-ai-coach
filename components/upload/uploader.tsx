@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCircle2, FileAudio, Loader2, UploadCloud } from "lucide-react";
+import { Check, CheckCircle2, FileAudio, Loader2, PlayCircle, UploadCloud } from "lucide-react";
 import { AnalysisPanel } from "@/components/upload/analysis-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { demoAnalysis } from "@/lib/demo-data";
+import { saveAnalysisHistoryItem } from "@/lib/history";
+import {
+  buildLearningContext,
+  clearLearningProfile,
+  loadLearningProfile,
+  type LearningProfile,
+  saveLearningProfile,
+  updateLearningProfile
+} from "@/lib/learning";
 import type { AnalysisResult } from "@/lib/types";
 
 const allowed = ["audio/mp4", "audio/mpeg", "audio/wav", "audio/x-m4a", "audio/aac"];
@@ -26,12 +35,18 @@ export function Uploader() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [transcript, setTranscript] = useState("");
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(demoAnalysis);
-  const [analysisSource, setAnalysisSource] = useState<"demo" | "ai">("demo");
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [analysisSource, setAnalysisSource] = useState<"demo" | "ai">("ai");
   const [loading, setLoading] = useState<"transcribe" | "analyze" | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
   const [completed, setCompleted] = useState(false);
   const [error, setError] = useState("");
+  const [learningProfile, setLearningProfile] = useState<LearningProfile | null>(null);
+  const [staffName, setStaffName] = useState("");
+  const [clinicName, setClinicName] = useState("");
+  const [memo, setMemo] = useState("");
+  const activeStaffName = staffName.trim() || "未設定スタッフ";
+  const activeClinicName = clinicName.trim() || "未設定店舗";
 
   useEffect(() => {
     if (!loading) return;
@@ -41,6 +56,10 @@ export function Uploader() {
     }, 1100);
     return () => window.clearInterval(timer);
   }, [loading]);
+
+  useEffect(() => {
+    setLearningProfile(loadLearningProfile(activeStaffName));
+  }, [activeStaffName]);
 
   function selectFile(nextFile?: File) {
     setError("");
@@ -52,6 +71,7 @@ export function Uploader() {
     }
     setFile(nextFile);
     setCompleted(false);
+    setAnalysis(null);
   }
 
   async function requestTranscription() {
@@ -63,10 +83,7 @@ export function Uploader() {
     const response = await fetch("/api/transcribe", { method: "POST", body: formData });
     const json = await response.json();
     if (!response.ok) {
-      setError(json.error ?? "文字起こしに失敗しました。デモ文字起こしを表示します。");
-      const fallback = "患者: 腰が痛くて朝がつらいです。\nスタッフ: そうなんですね。いつ頃からですか？\n患者: 2週間くらい前からです。";
-      setTranscript(fallback);
-      return fallback;
+      throw new Error(json.error ?? "文字起こしに失敗しました。OpenAI APIキーと音声形式を確認してください。");
     }
     setTranscript(json.text);
     return String(json.text);
@@ -78,16 +95,28 @@ export function Uploader() {
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript: nextTranscript })
+      body: JSON.stringify({
+        transcript: nextTranscript,
+        learningContext: buildLearningContext(learningProfile)
+      })
     });
     const json = await response.json();
     if (!response.ok) {
-      setError(json.error ?? "AI分析に失敗しました。デモ分析を表示します。");
-      setAnalysis(demoAnalysis);
-      setAnalysisSource("demo");
-      return;
+      throw new Error(json.error ?? "AI分析に失敗しました。OpenAI APIキーとモデル設定を確認してください。");
     }
-    setAnalysis(json.analysis);
+    const nextAnalysis = json.analysis as AnalysisResult;
+    const nextLearningProfile = updateLearningProfile(learningProfile, nextAnalysis);
+    saveLearningProfile(nextLearningProfile, activeStaffName);
+    saveAnalysisHistoryItem({
+      staffName: activeStaffName,
+      clinicName: activeClinicName,
+      source: "ai",
+      transcript: nextTranscript,
+      memo,
+      analysis: nextAnalysis
+    });
+    setLearningProfile(nextLearningProfile);
+    setAnalysis(nextAnalysis);
     setAnalysisSource("ai");
   }
 
@@ -98,16 +127,24 @@ export function Uploader() {
       return;
     }
 
-    setAnalysis(null);
-    setCompleted(false);
-    const nextTranscript = transcript.trim().length > 5 ? transcript : await requestTranscription();
-    await requestAnalysis(nextTranscript);
-    setLoadingStep(loadingMessages.length - 1);
-    setCompleted(true);
-    setLoading(null);
-    window.setTimeout(() => {
-      document.getElementById("analysis-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 650);
+    try {
+      setAnalysis(null);
+      setCompleted(false);
+      const nextTranscript = transcript.trim().length > 5 ? transcript : await requestTranscription();
+      await requestAnalysis(nextTranscript);
+      setLoadingStep(loadingMessages.length - 1);
+      setCompleted(true);
+      window.setTimeout(() => {
+        document.getElementById("analysis-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 650);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "処理に失敗しました。";
+      setError(message);
+      setCompleted(false);
+      setAnalysis(null);
+    } finally {
+      setLoading(null);
+    }
   }
 
   const currentStep = completed ? 4 : loading === "analyze" ? 3 : transcript ? 2 : file ? 1 : 0;
@@ -121,21 +158,55 @@ export function Uploader() {
   const progressValue = loading ? Math.min(95, (loadingStep + 1) * 17) : completed ? 100 : currentStep * 25;
 
   function transcriptOnly() {
-    void requestTranscription().finally(() => setLoading(null));
+    void requestTranscription()
+      .catch((caught) => {
+        const message = caught instanceof Error ? caught.message : "文字起こしに失敗しました。";
+        setError(message);
+      })
+      .finally(() => setLoading(null));
+  }
+
+  function showSampleResult() {
+    setError("");
+    setLoading(null);
+    setAnalysis(demoAnalysis);
+    setAnalysisSource("demo");
+    saveAnalysisHistoryItem({
+      staffName: activeStaffName,
+      clinicName: activeClinicName,
+      source: "demo",
+      transcript: transcript || "サンプル表示",
+      memo,
+      analysis: demoAnalysis
+    });
+    setCompleted(true);
+    window.setTimeout(() => {
+      document.getElementById("analysis-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 250);
+  }
+
+  function resetLearning() {
+    clearLearningProfile(activeStaffName);
+    setLearningProfile(null);
   }
 
   return (
     <div className="space-y-5">
       <StepProgress currentStep={currentStep} />
+      <LearningMemoryCard profile={learningProfile} onReset={resetLearning} />
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle>音声アップロード</CardTitle>
-            <Badge tone={analysisSource === "ai" ? "success" : "warning"}>{analysisSource === "ai" ? "AI分析結果" : "デモ表示"}</Badge>
+            <Badge tone={analysisSource === "ai" ? "success" : "warning"}>{analysisSource === "ai" ? "実分析モード" : "サンプル表示"}</Badge>
           </div>
           <CardDescription>iPhoneボイスメモのm4a、wav、mp3に対応。録音機能は不要です。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input value={staffName} onChange={(event) => setStaffName(event.target.value)} placeholder="スタッフ名 例: 田中さん" />
+            <Input value={clinicName} onChange={(event) => setClinicName(event.target.value)} placeholder="店舗名 例: 新宿本店" />
+          </div>
           <div
             onDrop={(event) => {
               event.preventDefault();
@@ -171,6 +242,10 @@ export function Uploader() {
             {loading ? <Loader2 className="size-5 animate-spin" /> : completed ? <CheckCircle2 className="size-5" /> : null}
             {primaryButtonText}
           </Button>
+          <Button variant="ghost" className="w-full" onClick={showSampleResult} disabled={loading !== null}>
+            <PlayCircle className="size-5" />
+            サンプル結果だけ確認する
+          </Button>
           {error ? <p className="rounded-2xl bg-rose-50 p-4 text-sm leading-6 text-danger">{error}</p> : null}
         </CardContent>
       </Card>
@@ -184,7 +259,7 @@ export function Uploader() {
         <CardContent className="space-y-4">
           <Textarea value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="文字起こし結果がここに入ります。" className="min-h-64" />
           <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-            <Input placeholder="失注理由メモ 任意" />
+            <Input value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="失注理由メモ 任意" />
             <Button onClick={startCorrection} disabled={!file || loading !== null || transcript.length < 5}>
               {loading === "analyze" ? <Loader2 className="size-4 animate-spin" /> : null}
               再分析する
@@ -194,6 +269,49 @@ export function Uploader() {
       </Card>
       {analysis ? <AnalysisPanel analysis={analysis} source={analysisSource} /> : null}
     </div>
+  );
+}
+
+function LearningMemoryCard({ profile, onReset }: { profile: LearningProfile | null; onReset: () => void }) {
+  return (
+    <Card className="border-primary/15 bg-white">
+      <CardContent className="grid gap-4 p-5 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="success">学習メモリ</Badge>
+            <span className="text-xs text-muted-foreground">このブラウザ内で過去の添削傾向を蓄積します</span>
+          </div>
+          {profile ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl bg-muted p-3">
+                <p className="text-xs font-semibold text-muted-foreground">分析件数</p>
+                <p className="mt-1 text-2xl font-bold">{profile.totalAnalyses}件</p>
+              </div>
+              <div className="rounded-2xl bg-muted p-3">
+                <p className="text-xs font-semibold text-muted-foreground">過去平均点</p>
+                <p className="mt-1 text-2xl font-bold">{Math.round(profile.averageScore)}点</p>
+              </div>
+              <div className="rounded-2xl bg-muted p-3">
+                <p className="text-xs font-semibold text-muted-foreground">平均契約確率</p>
+                <p className="mt-1 text-2xl font-bold">{Math.round(profile.averageContractProbability)}%</p>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              まだ学習データはありません。最初の音声を分析すると、次回から弱点の繰り返しや改善傾向を踏まえた添削になります。
+            </p>
+          )}
+          {profile?.repeatedWeaknesses.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {profile.repeatedWeaknesses.slice(0, 3).map((item) => (
+                <Badge key={item.text} tone="warning">{item.text} {item.count}回</Badge>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <Button variant="outline" onClick={onReset} disabled={!profile}>学習をリセット</Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -252,7 +370,7 @@ function SuccessBanner({ source }: { source: "demo" | "ai" }) {
         </div>
         <div>
           <p className="text-lg font-bold text-emerald-950">AI分析が完了しました</p>
-          <p className="text-sm text-emerald-800">{source === "ai" ? "実際のAI分析結果を表示しています。" : "API未設定またはエラーのためデモ表示に切り替えました。"}</p>
+          <p className="text-sm text-emerald-800">{source === "ai" ? "実際のAI分析結果を表示しています。" : "サンプルデータを表示しています。実在の患者・スタッフ情報ではありません。"}</p>
         </div>
       </div>
     </div>

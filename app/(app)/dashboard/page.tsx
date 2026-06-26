@@ -13,7 +13,7 @@ const kpis = [
   { label: "今月の契約率", value: "64%", delta: "+8%", icon: TrendingUp },
   { label: "平均点", value: "78点", delta: "+6点", icon: Target },
   { label: "AIおすすめ改善ポイント", value: "料金前の価値提示", delta: "最優先", icon: Brain },
-  { label: "今週最も伸びたスタッフ", value: "田中 蓮", delta: "+12点", icon: Award },
+  { label: "今週最も伸びたスタッフ", value: "スタッフB", delta: "+12点", icon: Award },
   { label: "最近多い失注理由", value: "金額", delta: "31%", icon: TriangleAlert }
 ];
 

@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: completion.choices[0]?.message?.content ?? "" });
   } catch {
     return NextResponse.json({
-      message: "今月は料金説明前の価値再提示と、家族相談への確認質問を重点改善してください。田中さんは質問量、佐藤さんはクロージングの言い切りが伸びしろです。"
+      message: "今月は料金説明前の価値再提示と、家族相談への確認質問を重点改善してください。スタッフBは質問量、スタッフAはクロージングの言い切りが伸びしろです。"
     });
   }
 }

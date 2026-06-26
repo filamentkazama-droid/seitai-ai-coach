@@ -6,9 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 const members = [
-  ["佐藤 葵", "owner", "表参道整体ラボ"],
-  ["山本 凛", "manager", "新宿ウェルネス整体"],
-  ["田中 蓮", "staff", "表参道整体ラボ"]
+  ["スタッフA", "owner", "デモ整体院 本店"],
+  ["スタッフB", "manager", "デモ整体院 2号店"],
+  ["スタッフC", "staff", "デモ整体院 本店"]
 ];
 
 export default function AdminPage() {

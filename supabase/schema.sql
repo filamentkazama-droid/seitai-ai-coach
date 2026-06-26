@@ -51,11 +51,27 @@ create table public.ai_analyses (
   created_at timestamptz not null default now()
 );
 
+create table public.staff_learning_profiles (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  clinic_id uuid references public.clinics(id) on delete set null,
+  staff_id uuid not null references public.profiles(id) on delete cascade,
+  total_analyses integer not null default 0,
+  average_score numeric(5, 2) not null default 0,
+  average_contract_probability numeric(5, 2) not null default 0,
+  repeated_weaknesses jsonb not null default '[]'::jsonb,
+  last_next_focus jsonb not null default '[]'::jsonb,
+  summary text,
+  updated_at timestamptz not null default now(),
+  unique (staff_id)
+);
+
 alter table public.organizations enable row level security;
 alter table public.clinics enable row level security;
 alter table public.profiles enable row level security;
 alter table public.recordings enable row level security;
 alter table public.ai_analyses enable row level security;
+alter table public.staff_learning_profiles enable row level security;
 
 create or replace function public.current_org_id()
 returns uuid
@@ -135,6 +151,25 @@ create policy "analyses insert same organization"
 on public.ai_analyses for insert
 with check (organization_id = public.current_org_id());
 
+create policy "learning profiles readable by role"
+on public.staff_learning_profiles for select
+using (
+  organization_id = public.current_org_id()
+  and (public.current_role() in ('owner', 'manager') or staff_id = auth.uid())
+);
+
+create policy "learning profiles upsert by role"
+on public.staff_learning_profiles for all
+using (
+  organization_id = public.current_org_id()
+  and (public.current_role() in ('owner', 'manager') or staff_id = auth.uid())
+)
+with check (
+  organization_id = public.current_org_id()
+  and (public.current_role() in ('owner', 'manager') or staff_id = auth.uid())
+);
+
 create index recordings_org_created_idx on public.recordings(organization_id, created_at desc);
 create index recordings_staff_created_idx on public.recordings(staff_id, created_at desc);
 create index ai_analyses_recording_idx on public.ai_analyses(recording_id);
+create index staff_learning_profiles_org_idx on public.staff_learning_profiles(organization_id, updated_at desc);

@@ -1,10 +1,10 @@
 import type { AnalysisResult, Recording } from "@/lib/types";
 
 export const demoRecordings: Recording[] = [
-  { id: "r-001", clinicName: "表参道整体ラボ", staffName: "佐藤 葵", patientType: "慎重派", status: "契約", score: 88, contractProbability: 82, createdAt: "2026-06-25T09:30:00+09:00" },
-  { id: "r-002", clinicName: "表参道整体ラボ", staffName: "田中 蓮", patientType: "価格重視", status: "失注", score: 64, contractProbability: 38, createdAt: "2026-06-25T11:10:00+09:00" },
-  { id: "r-003", clinicName: "新宿ウェルネス整体", staffName: "山本 凛", patientType: "論理派", status: "追客", score: 76, contractProbability: 61, createdAt: "2026-06-24T17:40:00+09:00" },
-  { id: "r-004", clinicName: "新宿ウェルネス整体", staffName: "佐藤 葵", patientType: "症状改善重視", status: "契約", score: 91, contractProbability: 89, createdAt: "2026-06-24T13:05:00+09:00" }
+  { id: "r-001", clinicName: "デモ整体院 本店", staffName: "スタッフA", patientType: "慎重派", status: "契約", score: 88, contractProbability: 82, createdAt: "2026-06-25T09:30:00+09:00" },
+  { id: "r-002", clinicName: "デモ整体院 本店", staffName: "スタッフB", patientType: "価格重視", status: "失注", score: 64, contractProbability: 38, createdAt: "2026-06-25T11:10:00+09:00" },
+  { id: "r-003", clinicName: "デモ整体院 2号店", staffName: "スタッフC", patientType: "論理派", status: "追客", score: 76, contractProbability: 61, createdAt: "2026-06-24T17:40:00+09:00" },
+  { id: "r-004", clinicName: "デモ整体院 2号店", staffName: "スタッフA", patientType: "症状改善重視", status: "契約", score: 91, contractProbability: 89, createdAt: "2026-06-24T13:05:00+09:00" }
 ];
 
 export const demoAnalysis: AnalysisResult = {
