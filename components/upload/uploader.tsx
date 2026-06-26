@@ -33,6 +33,7 @@ const loadingMessages = [
 
 export function Uploader() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const demoEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO === "true";
   const [file, setFile] = useState<File | null>(null);
   const [transcript, setTranscript] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -203,6 +204,9 @@ export function Uploader() {
           <CardDescription>iPhoneボイスメモのm4a、wav、mp3に対応。録音機能は不要です。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
+            この画面は実際のAI添削モードです。音声はサーバー側でWhisper文字起こし後、OpenAI APIに送信して分析します。
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Input value={staffName} onChange={(event) => setStaffName(event.target.value)} placeholder="スタッフ名 例: 田中さん" />
             <Input value={clinicName} onChange={(event) => setClinicName(event.target.value)} placeholder="店舗名 例: 新宿本店" />
@@ -242,10 +246,12 @@ export function Uploader() {
             {loading ? <Loader2 className="size-5 animate-spin" /> : completed ? <CheckCircle2 className="size-5" /> : null}
             {primaryButtonText}
           </Button>
-          <Button variant="ghost" className="w-full" onClick={showSampleResult} disabled={loading !== null}>
-            <PlayCircle className="size-5" />
-            サンプル結果だけ確認する
-          </Button>
+          {demoEnabled ? (
+            <Button variant="ghost" className="w-full" onClick={showSampleResult} disabled={loading !== null}>
+              <PlayCircle className="size-5" />
+              サンプル結果だけ確認する
+            </Button>
+          ) : null}
           {error ? <p className="rounded-2xl bg-rose-50 p-4 text-sm leading-6 text-danger">{error}</p> : null}
         </CardContent>
       </Card>
