@@ -234,6 +234,9 @@ export function Uploader() {
                 <div>
                   <p className="text-sm font-semibold">{file.name}</p>
                   <p className="text-xs text-muted-foreground">{Math.round(file.size / 1024 / 1024 * 10) / 10} MB</p>
+                  {file.size > 24 * 1024 * 1024 ? (
+                    <p className="mt-1 text-xs text-amber-700">大容量音声のため、自動で軽量化・分割して処理します。</p>
+                  ) : null}
                 </div>
               </div>
               <Button variant="outline" onClick={transcriptOnly} disabled={loading !== null}>
