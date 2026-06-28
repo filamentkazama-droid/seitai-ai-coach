@@ -8,7 +8,7 @@ import { getOpenAI, whisperModel } from "@/lib/openai";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const maxBytes = 50 * 1024 * 1024;
+const maxBytes = 100 * 1024 * 1024;
 const openAiMaxBytes = 24 * 1024 * 1024;
 const ffmpegPath = process.env.FFMPEG_PATH ?? path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg");
 
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     }
 
     if (file.size > maxBytes) {
-      return NextResponse.json({ error: "ファイルサイズは50MB以下にしてください。" }, { status: 413 });
+      return NextResponse.json({ error: "ファイルサイズは100MB以下にしてください。" }, { status: 413 });
     }
 
     if (!/\.(m4a|wav|mp3)$/i.test(file.name)) {
