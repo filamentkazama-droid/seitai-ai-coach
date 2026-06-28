@@ -7,7 +7,18 @@ const scoreReason = z.object({
 
 export const analysisSchema = z.object({
   overallScore: z.number().min(0).max(100),
-  scores: z.record(scoreReason),
+  scores: z.object({
+    empathy: scoreReason,
+    interview: scoreReason,
+    lifeContext: scoreReason,
+    inspection: scoreReason,
+    causeExplanation: scoreReason,
+    treatmentValue: scoreReason,
+    futureVision: scoreReason,
+    pricing: scoreReason,
+    closing: scoreReason,
+    trust: scoreReason
+  }),
   goodPoints: z.array(z.string()),
   improvementPoints: z.array(z.string()),
   improvementReasons: z.array(z.string()),
@@ -20,7 +31,18 @@ export const analysisSchema = z.object({
     negativeFactors: z.array(z.string()),
     improvedProbability: z.number().min(0).max(100)
   }),
-  emotions: z.record(scoreReason),
+  emotions: z.object({
+    confidence: scoreReason,
+    nervousness: scoreReason,
+    impatience: scoreReason,
+    empathy: scoreReason,
+    safety: scoreReason,
+    trust: scoreReason,
+    pushiness: scoreReason,
+    energy: scoreReason,
+    sincerity: scoreReason,
+    patientUnderstanding: scoreReason
+  }),
   talkAnalysis: z.object({
     staffTalkRatio: z.number().min(0).max(100),
     patientTalkRatio: z.number().min(0).max(100),
@@ -43,7 +65,7 @@ export const analysisSchema = z.object({
   timeline: z.array(z.object({
     start: z.string(),
     end: z.string(),
-    phase: z.string(),
+    phase: z.enum(["問診", "共感", "検査", "原因説明", "改善計画", "施術価値", "料金説明", "クロージング", "契約", "失注"]),
     summary: z.string(),
     aiComment: z.string()
   })),
