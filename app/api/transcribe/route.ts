@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import ffmpegPath from "ffmpeg-static";
 import { getOpenAI, whisperModel } from "@/lib/openai";
 
 export const runtime = "nodejs";
@@ -11,14 +10,10 @@ export const maxDuration = 300;
 
 const maxBytes = 50 * 1024 * 1024;
 const openAiMaxBytes = 24 * 1024 * 1024;
+const ffmpegPath = process.env.FFMPEG_PATH ?? path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg");
 
 function runFfmpeg(args: string[]) {
   return new Promise<void>((resolve, reject) => {
-    if (!ffmpegPath) {
-      reject(new Error("音声変換機能を起動できませんでした。"));
-      return;
-    }
-
     const process = spawn(ffmpegPath, args);
     let stderr = "";
     process.stderr.on("data", (chunk: Buffer) => {
