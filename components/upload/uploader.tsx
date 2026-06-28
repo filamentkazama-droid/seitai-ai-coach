@@ -22,6 +22,8 @@ import {
 import type { AnalysisResult } from "@/lib/types";
 
 const allowed = ["audio/mp4", "audio/mpeg", "audio/wav", "audio/x-m4a", "audio/aac"];
+const browserSplitThreshold = 45 * 1024 * 1024;
+const maxUploadBytes = 100 * 1024 * 1024;
 const loadingMessages = [
   "🎙️ 音声を解析しています...",
   "✍️ 文字起こし中...",
@@ -70,6 +72,10 @@ export function Uploader() {
       setError("m4a、wav、mp3形式の音声をアップロードしてください。");
       return;
     }
+    if (nextFile.size > maxUploadBytes) {
+      setError("ファイルサイズは100MB以下にしてください。");
+      return;
+    }
     setFile(nextFile);
     setCompleted(false);
     setAnalysis(null);
@@ -79,15 +85,73 @@ export function Uploader() {
     if (!file) return transcript;
     setLoading("transcribe");
     setError("");
+    const text = file.size > browserSplitThreshold
+      ? await requestBrowserSplitTranscription(file)
+      : await requestTranscriptionFile(file);
+    setTranscript(text);
+    return text;
+  }
+
+  async function requestTranscriptionFile(audioFile: File) {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", audioFile);
     const response = await fetch("/api/transcribe", { method: "POST", body: formData });
-    const json = await response.json();
+    const raw = await response.text();
+    let json: { text?: string; error?: string };
+    try {
+      json = JSON.parse(raw) as { text?: string; error?: string };
+    } catch {
+      throw new Error("音声の送信が途中で停止しました。再度お試しください。");
+    }
     if (!response.ok) {
       throw new Error(json.error ?? "文字起こしに失敗しました。OpenAI APIキーと音声形式を確認してください。");
     }
-    setTranscript(json.text);
-    return String(json.text);
+    return String(json.text ?? "");
+  }
+
+  async function requestBrowserSplitTranscription(audioFile: File) {
+    const [{ FFmpeg }, { fetchFile, toBlobURL }] = await Promise.all([
+      import("@ffmpeg/ffmpeg"),
+      import("@ffmpeg/util")
+    ]);
+    const ffmpeg = new FFmpeg();
+    const coreBaseUrl = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+    const extension = audioFile.name.split(".").pop()?.toLowerCase() || "m4a";
+    const inputName = `input.${extension}`;
+
+    try {
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${coreBaseUrl}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await toBlobURL(`${coreBaseUrl}/ffmpeg-core.wasm`, "application/wasm")
+      });
+      await ffmpeg.writeFile(inputName, await fetchFile(audioFile));
+      const exitCode = await ffmpeg.exec([
+        "-i", inputName,
+        "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k",
+        "-f", "segment", "-segment_time", "900", "-reset_timestamps", "1",
+        "chunk-%03d.mp3"
+      ]);
+      if (exitCode !== 0) throw new Error("音声の分割に失敗しました。");
+
+      const entries = await ffmpeg.listDir("/");
+      const chunkNames = entries
+        .filter((entry) => !entry.isDir && entry.name.startsWith("chunk-") && entry.name.endsWith(".mp3"))
+        .map((entry) => entry.name)
+        .sort();
+      if (!chunkNames.length) throw new Error("音声を分割できませんでした。");
+
+      const texts: string[] = [];
+      for (const [index, chunkName] of chunkNames.entries()) {
+        const data = await ffmpeg.readFile(chunkName);
+        if (typeof data === "string") throw new Error("分割音声を読み込めませんでした。");
+        const bytes = Uint8Array.from(data);
+        const chunk = new File([bytes], `part-${index + 1}.mp3`, { type: "audio/mpeg" });
+        texts.push(await requestTranscriptionFile(chunk));
+      }
+      return texts.join("\n\n");
+    } finally {
+      ffmpeg.terminate();
+    }
   }
 
   async function requestAnalysis(nextTranscript: string) {
@@ -235,7 +299,7 @@ export function Uploader() {
                   <p className="text-sm font-semibold">{file.name}</p>
                   <p className="text-xs text-muted-foreground">{Math.round(file.size / 1024 / 1024 * 10) / 10} MB</p>
                   {file.size > 24 * 1024 * 1024 ? (
-                    <p className="mt-1 text-xs text-amber-700">大容量音声のため、自動で軽量化・分割して処理します。</p>
+                    <p className="mt-1 text-xs text-amber-700">大容量音声のため、自動で軽量化・分割して処理します。画面を閉じずにお待ちください。</p>
                   ) : null}
                 </div>
               </div>
