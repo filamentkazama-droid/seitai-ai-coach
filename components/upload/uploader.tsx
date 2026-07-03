@@ -22,7 +22,7 @@ import {
 import type { AnalysisResult } from "@/lib/types";
 
 const allowed = ["audio/mp4", "audio/mpeg", "audio/wav", "audio/x-m4a", "audio/aac"];
-const browserSplitThreshold = 45 * 1024 * 1024;
+const browserSplitThreshold = 20 * 1024 * 1024;
 const maxUploadBytes = 100 * 1024 * 1024;
 const loadingMessages = [
   "🎙️ 音声を解析しています...",
