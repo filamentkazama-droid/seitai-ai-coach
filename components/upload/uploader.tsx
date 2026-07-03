@@ -128,7 +128,7 @@ export function Uploader() {
       const exitCode = await ffmpeg.exec([
         "-i", inputName,
         "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k",
-        "-f", "segment", "-segment_time", "900", "-reset_timestamps", "1",
+        "-f", "segment", "-segment_time", "300", "-reset_timestamps", "1",
         "chunk-%03d.mp3"
       ]);
       if (exitCode !== 0) throw new Error("音声の分割に失敗しました。");
