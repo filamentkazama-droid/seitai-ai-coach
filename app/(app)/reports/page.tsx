@@ -7,18 +7,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { clearAnalysisHistory, loadAnalysisHistory, type AnalysisHistoryItem } from "@/lib/history";
+import type { AnalysisHistoryItem } from "@/lib/history";
 
 export default function ReportsPage() {
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
   const [query, setQuery] = useState("");
   const [selectedStaff, setSelectedStaff] = useState("すべて");
   const [selectedItem, setSelectedItem] = useState<AnalysisHistoryItem | null>(null);
+  const [canDelete, setCanDelete] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const items = loadAnalysisHistory();
-    setHistory(items);
-    setSelectedItem(items[0] ?? null);
+    void fetch("/api/reports")
+      .then((response) => response.json())
+      .then((json) => {
+        const items = Array.isArray(json.items) ? json.items as AnalysisHistoryItem[] : [];
+        setHistory(items);
+        setSelectedItem(items[0] ?? null);
+        setCanDelete(Boolean(json.canDelete));
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const staffNames = useMemo(() => ["すべて", ...new Set(history.map((item) => item.staffName))], [history]);
@@ -35,10 +43,21 @@ export default function ReportsPage() {
   }, [history, query, selectedStaff]);
   const summary = useMemo(() => buildSummary(filtered), [filtered]);
 
-  function clearAll() {
-    clearAnalysisHistory();
-    setHistory([]);
-    setSelectedItem(null);
+  async function clearAll() {
+    if (!window.confirm("組織内の添削履歴をすべて削除しますか？")) return;
+    const response = await fetch("/api/reports", { method: "DELETE" });
+    if (response.ok) {
+      setHistory([]);
+      setSelectedItem(null);
+    }
+  }
+
+  async function updateResult(id: string, status: "contracted" | "lost" | "follow_up", lostReason?: string) {
+    const response = await fetch("/api/reports", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status, lostReason }) });
+    if (!response.ok) return;
+    const apply = (item: AnalysisHistoryItem) => item.id === id ? { ...item, status, lostReason: status === "lost" ? lostReason : undefined } : item;
+    setHistory((items) => items.map(apply));
+    setSelectedItem((item) => item ? apply(item) : null);
   }
 
   return (
@@ -61,7 +80,7 @@ export default function ReportsPage() {
             >
               {staffNames.map((name) => <option key={name}>{name}</option>)}
             </select>
-            <Button variant="outline" onClick={clearAll} disabled={!history.length}>
+            <Button variant="outline" onClick={clearAll} disabled={!history.length || !canDelete}>
               <Trash2 className="size-4" />
               履歴を削除
             </Button>
@@ -80,7 +99,9 @@ export default function ReportsPage() {
               <CardTitle>添削履歴</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {filtered.length ? filtered.map((item) => (
+              {loading ? (
+                <div className="rounded-2xl bg-muted p-5 text-sm text-muted-foreground">履歴を読み込んでいます...</div>
+              ) : filtered.length ? filtered.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setSelectedItem(item)}
@@ -111,7 +132,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          <FeedbackDetail item={selectedItem} />
+          <FeedbackDetail item={selectedItem} onUpdateResult={updateResult} />
         </div>
       </div>
     </div>
@@ -138,7 +159,7 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FeedbackDetail({ item }: { item: AnalysisHistoryItem | null }) {
+function FeedbackDetail({ item, onUpdateResult }: { item: AnalysisHistoryItem | null; onUpdateResult: (id: string, status: "contracted" | "lost" | "follow_up", lostReason?: string) => Promise<void> }) {
   if (!item) {
     return (
       <Card>
@@ -161,6 +182,13 @@ function FeedbackDetail({ item }: { item: AnalysisHistoryItem | null }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="rounded-2xl border p-4">
+          <p className="text-sm font-bold">接客結果を記録</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <select value={item.status ?? "follow_up"} onChange={(event) => void onUpdateResult(item.id, event.target.value as "contracted" | "lost" | "follow_up", item.lostReason)} className="h-11 rounded-xl border bg-white px-3 text-sm"><option value="follow_up">追客・未確定</option><option value="contracted">契約</option><option value="lost">失注</option></select>
+            {item.status === "lost" ? <select value={item.lostReason ?? "その他"} onChange={(event) => void onUpdateResult(item.id, "lost", event.target.value)} className="h-11 rounded-xl border bg-white px-3 text-sm">{["金額", "必要性不足", "家族相談", "他院比較", "時間", "その他"].map((reason) => <option key={reason}>{reason}</option>)}</select> : <div className="grid place-items-center rounded-xl bg-muted px-3 text-xs text-muted-foreground">結果は分析画面へ自動集計されます</div>}
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-muted p-4">
             <p className="text-xs font-semibold text-muted-foreground">総合点数</p>

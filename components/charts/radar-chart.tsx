@@ -13,7 +13,7 @@ import { Radar } from "react-chartjs-2";
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
-export function RadarChart() {
+export function RadarChart({ current = [0, 0, 0, 0, 0, 0] }: { current?: number[] }) {
   return (
     <Radar
       data={{
@@ -21,13 +21,13 @@ export function RadarChart() {
         datasets: [
           {
             label: "現在",
-            data: [84, 80, 74, 76, 68, 72],
+            data: current,
             borderColor: "#0071e3",
             backgroundColor: "rgba(0, 113, 227, 0.14)"
           },
           {
             label: "トップスタッフ",
-            data: [92, 90, 88, 91, 90, 87],
+            data: [90, 90, 90, 90, 90, 90],
             borderColor: "#0a7f4f",
             backgroundColor: "rgba(10, 127, 79, 0.08)"
           }

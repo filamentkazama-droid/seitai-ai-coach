@@ -123,7 +123,14 @@ function ScoreTab({ analysis }: { analysis: AnalysisResult }) {
             <span className="pb-2 text-muted-foreground">/ 100</span>
           </div>
           <Progress value={analysis.overallScore} className="mt-5" />
-          <div className="mt-6 h-72"><RadarChart /></div>
+          <div className="mt-6 h-72"><RadarChart current={[
+            analysis.scores.empathy.score,
+            analysis.scores.interview.score,
+            analysis.scores.inspection.score,
+            analysis.scores.causeExplanation.score,
+            analysis.scores.pricing.score,
+            analysis.scores.closing.score
+          ]} /></div>
         </CardContent>
       </Card>
       <Card>

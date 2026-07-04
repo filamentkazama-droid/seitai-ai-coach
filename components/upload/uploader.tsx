@@ -10,15 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { demoAnalysis } from "@/lib/demo-data";
-import { saveAnalysisHistoryItem } from "@/lib/history";
-import {
-  buildLearningContext,
-  clearLearningProfile,
-  loadLearningProfile,
-  type LearningProfile,
-  saveLearningProfile,
-  updateLearningProfile
-} from "@/lib/learning";
+import type { LearningProfile } from "@/lib/learning";
 import type { AnalysisResult } from "@/lib/types";
 
 const allowed = ["audio/mp4", "audio/mpeg", "audio/wav", "audio/x-m4a", "audio/aac"];
@@ -48,8 +40,6 @@ export function Uploader() {
   const [staffName, setStaffName] = useState("");
   const [clinicName, setClinicName] = useState("");
   const [memo, setMemo] = useState("");
-  const activeStaffName = staffName.trim() || "未設定スタッフ";
-  const activeClinicName = clinicName.trim() || "未設定店舗";
 
   useEffect(() => {
     if (!loading) return;
@@ -61,8 +51,18 @@ export function Uploader() {
   }, [loading]);
 
   useEffect(() => {
-    setLearningProfile(loadLearningProfile(activeStaffName));
-  }, [activeStaffName]);
+    void fetch("/api/me")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("プロフィールを取得できませんでした。");
+        return response.json();
+      })
+      .then((json) => {
+        setStaffName(String(json.profile?.fullName ?? ""));
+        setClinicName(String(json.profile?.clinicName ?? ""));
+        setLearningProfile((json.learning ?? null) as LearningProfile | null);
+      })
+      .catch(() => setError("ログイン情報を取得できませんでした。再ログインしてください。"));
+  }, []);
 
   function selectFile(nextFile?: File) {
     setError("");
@@ -162,7 +162,8 @@ export function Uploader() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         transcript: nextTranscript,
-        learningContext: buildLearningContext(learningProfile)
+        memo,
+        fileName: file?.name ?? ""
       })
     });
     const json = await response.json();
@@ -170,17 +171,7 @@ export function Uploader() {
       throw new Error(json.error ?? "AI分析に失敗しました。OpenAI APIキーとモデル設定を確認してください。");
     }
     const nextAnalysis = json.analysis as AnalysisResult;
-    const nextLearningProfile = updateLearningProfile(learningProfile, nextAnalysis);
-    saveLearningProfile(nextLearningProfile, activeStaffName);
-    saveAnalysisHistoryItem({
-      staffName: activeStaffName,
-      clinicName: activeClinicName,
-      source: "ai",
-      transcript: nextTranscript,
-      memo,
-      analysis: nextAnalysis
-    });
-    setLearningProfile(nextLearningProfile);
+    setLearningProfile((json.learning ?? null) as LearningProfile | null);
     setAnalysis(nextAnalysis);
     setAnalysisSource("ai");
   }
@@ -236,23 +227,15 @@ export function Uploader() {
     setLoading(null);
     setAnalysis(demoAnalysis);
     setAnalysisSource("demo");
-    saveAnalysisHistoryItem({
-      staffName: activeStaffName,
-      clinicName: activeClinicName,
-      source: "demo",
-      transcript: transcript || "サンプル表示",
-      memo,
-      analysis: demoAnalysis
-    });
     setCompleted(true);
     window.setTimeout(() => {
       document.getElementById("analysis-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 250);
   }
 
-  function resetLearning() {
-    clearLearningProfile(activeStaffName);
-    setLearningProfile(null);
+  async function resetLearning() {
+    const response = await fetch("/api/me", { method: "DELETE" });
+    if (response.ok) setLearningProfile(null);
   }
 
   return (
@@ -272,8 +255,8 @@ export function Uploader() {
             この画面は実際のAI添削モードです。音声はサーバー側でWhisper文字起こし後、OpenAI APIに送信して分析します。
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Input value={staffName} onChange={(event) => setStaffName(event.target.value)} placeholder="スタッフ名 例: 田中さん" />
-            <Input value={clinicName} onChange={(event) => setClinicName(event.target.value)} placeholder="店舗名 例: 新宿本店" />
+            <Input value={staffName} readOnly aria-label="ログイン中のスタッフ" />
+            <Input value={clinicName} readOnly aria-label="所属店舗" />
           </div>
           <div
             onDrop={(event) => {
@@ -352,7 +335,7 @@ function LearningMemoryCard({ profile, onReset }: { profile: LearningProfile | n
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="success">学習メモリ</Badge>
-            <span className="text-xs text-muted-foreground">このブラウザ内で過去の添削傾向を蓄積します</span>
+            <span className="text-xs text-muted-foreground">スタッフごとの添削傾向を安全に共有保存します</span>
           </div>
           {profile ? (
             <div className="mt-4 grid gap-3 sm:grid-cols-3">

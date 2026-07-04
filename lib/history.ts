@@ -7,6 +7,8 @@ export type AnalysisHistoryItem = {
   source: "ai" | "demo";
   transcript: string;
   memo?: string;
+  status?: "contracted" | "lost" | "follow_up";
+  lostReason?: string;
   analysis: AnalysisResult;
   createdAt: string;
 };

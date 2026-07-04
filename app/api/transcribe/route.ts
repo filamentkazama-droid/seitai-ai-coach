@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { getAuthContext } from "@/lib/auth";
 import { getOpenAI, whisperModel } from "@/lib/openai";
 
 export const runtime = "nodejs";
@@ -60,7 +61,7 @@ async function transcribeLargeFile(file: File) {
       "-f",
       "segment",
       "-segment_time",
-      "900",
+      "300",
       "-reset_timestamps",
       "1",
       path.join(workDir, "chunk-%03d.mp3")
@@ -88,6 +89,11 @@ async function transcribeLargeFile(file: File) {
 
 export async function POST(request: Request) {
   try {
+    const { context } = await getAuthContext();
+    if (!context) {
+      return NextResponse.json({ error: "ログインが必要です。" }, { status: 401 });
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
 

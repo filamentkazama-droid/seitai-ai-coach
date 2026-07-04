@@ -11,7 +11,7 @@ const examples = ["契約率を上げたい", "スタッフAの弱点は？", "�
 
 export default function CoachPage() {
   const [messages, setMessages] = useState([
-    { role: "assistant", content: "今月は料金説明前の価値提示が契約率に最も影響しています。スタッフ別に見ると、スタッフBは確認質問を増やすと改善幅が大きいです。" }
+    { role: "assistant", content: "保存された店舗データとスタッフ別の添削履歴をもとに回答します。知りたいことを入力してください。" }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,14 +22,17 @@ export default function CoachPage() {
     setMessages(nextMessages);
     setInput("");
     setLoading(true);
-    const response = await fetch("/api/coach", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: nextMessages })
-    });
-    const json = await response.json();
-    setMessages([...nextMessages, { role: "assistant", content: json.message ?? "現在はデモ回答です。SupabaseとOpenAI設定後に実データで回答します。" }]);
-    setLoading(false);
+    try {
+      const response = await fetch("/api/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages })
+      });
+      const json = await response.json();
+      setMessages([...nextMessages, { role: "assistant", content: json.message ?? json.error ?? "回答を取得できませんでした。" }]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
