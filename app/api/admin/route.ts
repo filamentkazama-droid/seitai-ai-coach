@@ -6,11 +6,12 @@ import type { UserRole } from "@/lib/types";
 export async function GET() {
   const { supabase, context } = await getAuthContext();
   if (!context || !canManage(context.role)) return NextResponse.json({ error: "管理権限がありません。" }, { status: 403 });
-  const [{ data: clinics }, { data: profiles }] = await Promise.all([
+  const [{ data: organization }, { data: clinics }, { data: profiles }] = await Promise.all([
+    supabase.from("organizations").select("id, name").eq("id", context.organizationId).single(),
     supabase.from("clinics").select("id, name, address, created_at").eq("organization_id", context.organizationId).order("created_at"),
     supabase.from("profiles").select("id, clinic_id, full_name, role, is_active, created_at").eq("organization_id", context.organizationId).order("created_at")
   ]);
-  return NextResponse.json({ clinics: clinics ?? [], profiles: profiles ?? [], currentRole: context.role });
+  return NextResponse.json({ organization, clinics: clinics ?? [], profiles: profiles ?? [], currentRole: context.role, currentUserId: context.userId });
 }
 
 export async function POST(request: Request) {
@@ -50,6 +51,40 @@ export async function POST(request: Request) {
     if (!profileId || !["owner", "manager", "staff"].includes(role)) return NextResponse.json({ error: "入力が不正です。" }, { status: 400 });
     const { error } = await supabase.from("profiles").update({ role }).eq("id", profileId).eq("organization_id", context.organizationId);
     if (error) return NextResponse.json({ error: "権限を変更できませんでした。" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "updateOrganization") {
+    if (context.role !== "owner") return NextResponse.json({ error: "組織名の変更はオーナーのみ可能です。" }, { status: 403 });
+    const name = String(body.name ?? "").trim();
+    if (!name) return NextResponse.json({ error: "組織名を入力してください。" }, { status: 400 });
+    const admin = createAdminClient();
+    const { error } = await admin.from("organizations").update({ name }).eq("id", context.organizationId);
+    if (error) return NextResponse.json({ error: "組織名を変更できませんでした。" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "updateClinic") {
+    if (context.role !== "owner") return NextResponse.json({ error: "店舗情報の変更はオーナーのみ可能です。" }, { status: 403 });
+    const clinicId = String(body.clinicId ?? "").trim();
+    const name = String(body.name ?? "").trim();
+    const address = String(body.address ?? "").trim() || null;
+    if (!clinicId || !name) return NextResponse.json({ error: "店舗名を入力してください。" }, { status: 400 });
+    const { error } = await supabase.from("clinics").update({ name, address }).eq("id", clinicId).eq("organization_id", context.organizationId);
+    if (error) return NextResponse.json({ error: "店舗情報を変更できませんでした。" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "updateProfile") {
+    if (context.role !== "owner") return NextResponse.json({ error: "スタッフ名の変更はオーナーのみ可能です。" }, { status: 403 });
+    const profileId = String(body.profileId ?? "").trim();
+    const fullName = String(body.fullName ?? "").trim();
+    const clinicId = String(body.clinicId ?? "").trim();
+    if (!profileId || !fullName || !clinicId) return NextResponse.json({ error: "氏名と所属店舗を入力してください。" }, { status: 400 });
+    const clinicExists = await supabase.from("clinics").select("id").eq("id", clinicId).eq("organization_id", context.organizationId).maybeSingle();
+    if (!clinicExists.data) return NextResponse.json({ error: "所属店舗が見つかりません。" }, { status: 400 });
+    const { error } = await supabase.from("profiles").update({ full_name: fullName, clinic_id: clinicId, updated_at: new Date().toISOString() }).eq("id", profileId).eq("organization_id", context.organizationId);
+    if (error) return NextResponse.json({ error: "スタッフ情報を変更できませんでした。" }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 
