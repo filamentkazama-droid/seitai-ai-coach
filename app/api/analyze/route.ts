@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { analysisSchema } from "@/lib/ai-schema";
+import { AnalysisTargetError, resolveAnalysisTarget } from "@/lib/analysis-target";
 import { getAuthContext } from "@/lib/auth";
 import { buildLearningContext, type LearningProfile, updateLearningProfile } from "@/lib/learning";
 import { getOpenAI, analysisModel } from "@/lib/openai";
 import { analysisSystemPrompt, buildAnalysisPrompt } from "@/lib/prompts";
+import { createAdminClient } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 
@@ -19,6 +21,12 @@ export async function POST(request: Request) {
     const transcript = String(body.transcript ?? "").trim();
     const memo = String(body.memo ?? "").trim();
     const fileName = String(body.fileName ?? "").trim();
+    const target = await resolveAnalysisTarget(
+      supabase,
+      context,
+      String(body.staffId ?? "") || undefined,
+      String(body.clinicId ?? "") || undefined
+    );
 
     if (transcript.length < 5) {
       return NextResponse.json({ error: "分析する文字起こしを入力してください。" }, { status: 400 });
@@ -27,7 +35,7 @@ export async function POST(request: Request) {
     const { data: rawLearning } = await supabase
       .from("staff_learning_profiles")
       .select("total_analyses, average_score, average_contract_probability, repeated_weaknesses, last_next_focus, updated_at")
-      .eq("staff_id", context.userId)
+      .eq("staff_id", target.staffId)
       .maybeSingle();
     const learning = toLearningProfile(rawLearning);
 
@@ -46,12 +54,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "AI分析結果が空でした。" }, { status: 502 });
     }
 
-    const { data: recording, error: recordingError } = await supabase
+    const admin = createAdminClient();
+    const { data: recording, error: recordingError } = await admin
       .from("recordings")
       .insert({
         organization_id: context.organizationId,
-        clinic_id: context.clinicId,
-        staff_id: context.userId,
+        clinic_id: target.clinicId,
+        staff_id: target.staffId,
         original_file_name: fileName || null,
         transcript,
         edited_transcript: transcript,
@@ -62,7 +71,7 @@ export async function POST(request: Request) {
       .single();
     if (recordingError || !recording) throw new Error("添削履歴を保存できませんでした。");
 
-    const { error: analysisError } = await supabase.from("ai_analyses").insert({
+    const { error: analysisError } = await admin.from("ai_analyses").insert({
       recording_id: recording.id,
       organization_id: context.organizationId,
       model: analysisModel,
@@ -75,10 +84,10 @@ export async function POST(request: Request) {
     if (analysisError) throw new Error("AI分析結果を保存できませんでした。");
 
     const nextLearning = updateLearningProfile(learning, parsed);
-    await supabase.from("staff_learning_profiles").upsert({
+    const { error: learningError } = await admin.from("staff_learning_profiles").upsert({
       organization_id: context.organizationId,
-      clinic_id: context.clinicId,
-      staff_id: context.userId,
+      clinic_id: target.clinicId,
+      staff_id: target.staffId,
       total_analyses: nextLearning.totalAnalyses,
       average_score: nextLearning.averageScore,
       average_contract_probability: nextLearning.averageContractProbability,
@@ -87,11 +96,13 @@ export async function POST(request: Request) {
       summary: nextLearning.repeatedWeaknesses.slice(0, 3).map((item) => item.text).join("、"),
       updated_at: nextLearning.lastUpdated
     }, { onConflict: "staff_id" });
+    if (learningError) throw new Error("スタッフ別の学習データを保存できませんでした。");
 
-    return NextResponse.json({ analysis: parsed, recordingId: recording.id, learning: nextLearning });
+    return NextResponse.json({ analysis: parsed, recordingId: recording.id, learning: nextLearning, target });
   } catch (error) {
     const message = error instanceof Error ? error.message : "AI分析に失敗しました。";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = error instanceof AnalysisTargetError ? error.status : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 

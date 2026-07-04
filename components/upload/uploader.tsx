@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCircle2, FileAudio, Loader2, PlayCircle, UploadCloud } from "lucide-react";
+import { Building2, Check, CheckCircle2, FileAudio, Loader2, PlayCircle, UploadCloud, UserRound } from "lucide-react";
 import { AnalysisPanel } from "@/components/upload/analysis-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,9 @@ const loadingMessages = [
   "分析完了"
 ];
 
+type ClinicOption = { id: string; name: string };
+type StaffOption = { id: string; clinic_id: string; full_name: string; role: string };
+
 export function Uploader() {
   const inputRef = useRef<HTMLInputElement>(null);
   const demoEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO === "true";
@@ -39,6 +42,11 @@ export function Uploader() {
   const [learningProfile, setLearningProfile] = useState<LearningProfile | null>(null);
   const [staffName, setStaffName] = useState("");
   const [clinicName, setClinicName] = useState("");
+  const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [selectedClinicId, setSelectedClinicId] = useState("");
+  const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
+  const [clinicOptions, setClinicOptions] = useState<ClinicOption[]>([]);
+  const [canSelectTarget, setCanSelectTarget] = useState(false);
   const [memo, setMemo] = useState("");
 
   useEffect(() => {
@@ -57,8 +65,13 @@ export function Uploader() {
         return response.json();
       })
       .then((json) => {
-        setStaffName(String(json.profile?.fullName ?? ""));
-        setClinicName(String(json.profile?.clinicName ?? ""));
+        setStaffName(String(json.target?.staffName ?? json.profile?.fullName ?? ""));
+        setClinicName(String(json.target?.clinicName ?? json.profile?.clinicName ?? ""));
+        setSelectedStaffId(String(json.target?.staffId ?? json.profile?.userId ?? ""));
+        setSelectedClinicId(String(json.target?.clinicId ?? json.profile?.clinicId ?? ""));
+        setStaffOptions((json.selection?.staff ?? []) as StaffOption[]);
+        setClinicOptions((json.selection?.clinics ?? []) as ClinicOption[]);
+        setCanSelectTarget(Boolean(json.selection?.canSelect));
         setLearningProfile((json.learning ?? null) as LearningProfile | null);
       })
       .catch(() => setError("ログイン情報を取得できませんでした。再ログインしてください。"));
@@ -163,7 +176,9 @@ export function Uploader() {
       body: JSON.stringify({
         transcript: nextTranscript,
         memo,
-        fileName: file?.name ?? ""
+        fileName: file?.name ?? "",
+        staffId: selectedStaffId,
+        clinicId: selectedClinicId
       })
     });
     const json = await response.json();
@@ -234,8 +249,53 @@ export function Uploader() {
   }
 
   async function resetLearning() {
-    const response = await fetch("/api/me", { method: "DELETE" });
+    const params = new URLSearchParams({ staffId: selectedStaffId, clinicId: selectedClinicId });
+    const response = await fetch(`/api/me?${params.toString()}`, { method: "DELETE" });
     if (response.ok) setLearningProfile(null);
+  }
+
+  async function loadTargetLearning(staffId: string, clinicId: string) {
+    const params = new URLSearchParams({ staffId, clinicId });
+    const response = await fetch(`/api/me?${params.toString()}`);
+    const json = await response.json();
+    if (!response.ok) throw new Error(json.error ?? "スタッフ情報を取得できませんでした。");
+    setLearningProfile((json.learning ?? null) as LearningProfile | null);
+  }
+
+  function resetResultForTargetChange() {
+    setAnalysis(null);
+    setCompleted(false);
+    setError("");
+  }
+
+  function selectStaff(staffId: string) {
+    const staff = staffOptions.find((item) => item.id === staffId);
+    if (!staff) return;
+    const clinic = clinicOptions.find((item) => item.id === staff.clinic_id);
+    setSelectedStaffId(staff.id);
+    setSelectedClinicId(staff.clinic_id);
+    setStaffName(staff.full_name);
+    setClinicName(clinic?.name ?? "所属店舗");
+    resetResultForTargetChange();
+    void loadTargetLearning(staff.id, staff.clinic_id).catch((caught) => {
+      setError(caught instanceof Error ? caught.message : "スタッフ情報を取得できませんでした。");
+    });
+  }
+
+  function selectClinic(clinicId: string) {
+    const clinic = clinicOptions.find((item) => item.id === clinicId);
+    const firstStaff = staffOptions.find((item) => item.clinic_id === clinicId);
+    setSelectedClinicId(clinicId);
+    setClinicName(clinic?.name ?? "所属店舗");
+    resetResultForTargetChange();
+    if (firstStaff) {
+      selectStaff(firstStaff.id);
+    } else {
+      setSelectedStaffId("");
+      setStaffName("");
+      setLearningProfile(null);
+      setError("この店舗には有効なスタッフが登録されていません。");
+    }
   }
 
   return (
@@ -255,9 +315,38 @@ export function Uploader() {
             この画面は実際のAI添削モードです。音声はサーバー側でWhisper文字起こし後、OpenAI APIに送信して分析します。
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Input value={staffName} readOnly aria-label="ログイン中のスタッフ" />
-            <Input value={clinicName} readOnly aria-label="所属店舗" />
+            <label className="space-y-2">
+              <span className="flex items-center gap-2 text-sm font-semibold"><Building2 className="size-4 text-primary" />添削対象の店舗</span>
+              <select
+                value={selectedClinicId}
+                onChange={(event) => selectClinic(event.target.value)}
+                disabled={!canSelectTarget}
+                className="flex h-12 w-full rounded-2xl border bg-white px-4 text-base outline-none transition focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-80 sm:text-sm"
+                aria-label="添削対象の店舗"
+              >
+                {clinicOptions.map((clinic) => <option key={clinic.id} value={clinic.id}>{clinic.name}</option>)}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="flex items-center gap-2 text-sm font-semibold"><UserRound className="size-4 text-primary" />添削対象のスタッフ</span>
+              <select
+                value={selectedStaffId}
+                onChange={(event) => selectStaff(event.target.value)}
+                disabled={!canSelectTarget}
+                className="flex h-12 w-full rounded-2xl border bg-white px-4 text-base outline-none transition focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-80 sm:text-sm"
+                aria-label="添削対象のスタッフ"
+              >
+                {staffOptions
+                  .filter((staff) => staff.clinic_id === selectedClinicId)
+                  .map((staff) => <option key={staff.id} value={staff.id}>{staff.full_name}</option>)}
+              </select>
+            </label>
           </div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            {canSelectTarget
+              ? `この添削は「${clinicName} / ${staffName}」の履歴と学習データに保存されます。`
+              : "スタッフ権限では、自分の添削履歴と学習データに保存されます。"}
+          </p>
           <div
             onDrop={(event) => {
               event.preventDefault();
@@ -292,7 +381,7 @@ export function Uploader() {
               </Button>
             </div>
           ) : null}
-          <Button className="h-14 w-full text-base" onClick={startCorrection} disabled={!file || loading !== null}>
+          <Button className="h-14 w-full text-base" onClick={startCorrection} disabled={!file || !selectedStaffId || !selectedClinicId || loading !== null}>
             {loading ? <Loader2 className="size-5 animate-spin" /> : completed ? <CheckCircle2 className="size-5" /> : null}
             {primaryButtonText}
           </Button>
