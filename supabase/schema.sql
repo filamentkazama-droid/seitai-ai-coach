@@ -203,11 +203,25 @@ on conflict (id) do update set
 
 drop policy if exists "members upload own recordings" on storage.objects;
 create policy "members upload own recordings" on storage.objects for insert to authenticated
-with check (bucket_id = 'recordings' and (storage.foldername(name))[1] = public.current_org_id()::text);
+with check (
+  bucket_id = 'recordings'
+  and (storage.foldername(name))[1] = public.current_org_id()::text
+  and (
+    public.current_role() in ('owner','manager')
+    or (storage.foldername(name))[2] = auth.uid()::text
+  )
+);
 
 drop policy if exists "members read organization recordings" on storage.objects;
 create policy "members read organization recordings" on storage.objects for select to authenticated
-using (bucket_id = 'recordings' and (storage.foldername(name))[1] = public.current_org_id()::text);
+using (
+  bucket_id = 'recordings'
+  and (storage.foldername(name))[1] = public.current_org_id()::text
+  and (
+    public.current_role() in ('owner','manager')
+    or (storage.foldername(name))[2] = auth.uid()::text
+  )
+);
 
 drop policy if exists "managers delete organization recordings" on storage.objects;
 create policy "managers delete organization recordings" on storage.objects for delete to authenticated

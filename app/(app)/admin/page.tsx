@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Check, Loader2, Pencil, Plus, Save, Shield, UserPlus, X } from "lucide-react";
+import { Building2, Check, Loader2, Pencil, Plus, RotateCcw, Save, Shield, Trash2, UserPlus, X } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,8 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error">("success");
+  const [deletingProfile, setDeletingProfile] = useState<string | null>(null);
   const clinicNames = useMemo(() => new Map(clinics.map((clinic) => [clinic.id, clinic.name])), [clinics]);
   const isOwner = currentRole === "owner";
 
@@ -50,6 +52,7 @@ export default function AdminPage() {
       setClinicId((current) => current || json.clinics?.[0]?.id || "");
     } else {
       setMessage(json.error ?? "管理データを取得できませんでした。");
+      setMessageType("error");
     }
     setLoading(false);
   }
@@ -65,7 +68,8 @@ export default function AdminPage() {
       body: JSON.stringify(body)
     });
     const json = await response.json();
-    setMessage(response.ok ? success : json.error ?? "処理に失敗しました。");
+    setMessageType(response.ok ? "success" : "error");
+    setMessage(response.ok ? String(json.message ?? success) : json.error ?? "処理に失敗しました。");
     if (response.ok) await load();
     setSaving(false);
     return response.ok;
@@ -79,7 +83,7 @@ export default function AdminPage() {
   }
 
   async function invite() {
-    if (await post({ action: "invite", fullName, email, clinicId, role: inviteRole }, "招待メールを送信しました。")) {
+    if (await post({ action: "invite", fullName, email, clinicId, role: inviteRole }, "招待メールを送信しました。期限切れだった場合も、新しいリンクが有効です。")) {
       setFullName("");
       setEmail("");
     }
@@ -100,8 +104,8 @@ export default function AdminPage() {
       <PageHeader title="管理画面" description="組織・店舗・スタッフ情報と権限を安全に管理します。" />
       <div className="grid gap-4 px-4 pb-10 sm:px-6 lg:grid-cols-2 lg:px-8">
         {message ? (
-          <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-900 lg:col-span-2">
-            <Check className="size-4" />{message}
+          <div className={`flex items-center gap-2 rounded-2xl p-4 text-sm lg:col-span-2 ${messageType === "success" ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"}`}>
+            {messageType === "success" ? <Check className="size-4" /> : <X className="size-4" />}{message}
           </div>
         ) : null}
 
@@ -155,7 +159,8 @@ export default function AdminPage() {
             <Input type="email" placeholder="メールアドレス" value={email} onChange={(event) => setEmail(event.target.value)} />
             <select value={clinicId} onChange={(event) => setClinicId(event.target.value)} className="h-12 w-full rounded-2xl border bg-white px-4">{clinics.map((clinic) => <option key={clinic.id} value={clinic.id}>{clinic.name}</option>)}</select>
             <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as UserRole)} className="h-12 w-full rounded-2xl border bg-white px-4"><option value="staff">スタッフ</option><option value="manager">店長</option></select>
-            <Button onClick={invite} disabled={saving || !email || !fullName || !clinicId}><UserPlus className="size-4" />招待メールを送る</Button>
+            <Button onClick={invite} disabled={saving || !email || !fullName || !clinicId}><UserPlus className="size-4" />招待・再設定メールを送る</Button>
+            <p className="text-xs leading-5 text-muted-foreground">新規スタッフには招待メール、登録済みスタッフにはパスワード設定メールを送信します。期限切れの場合も同じ内容で再送できます。</p>
           </CardContent>
         </Card>
 
@@ -163,7 +168,7 @@ export default function AdminPage() {
           <CardHeader><CardTitle className="flex items-center gap-2"><Shield className="size-5 text-primary" />スタッフ・権限管理</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {loading ? <p className="flex items-center gap-2 text-sm"><Loader2 className="size-4 animate-spin" />読み込み中...</p> : profiles.map((profile) => (
-              <div key={profile.id} className="rounded-2xl border p-4">
+              <div key={profile.id} className={`rounded-2xl border p-4 ${profile.is_active ? "" : "bg-muted/40 opacity-80"}`}>
                 {editingProfile === profile.id ? (
                   <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
                     <Input value={profileDraft.fullName} onChange={(event) => setProfileDraft((draft) => ({ ...draft, fullName: event.target.value }))} placeholder="氏名" />
@@ -175,15 +180,30 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div><p className="font-semibold">{profile.full_name}{profile.id === currentUserId ? <span className="ml-2 text-xs font-normal text-primary">あなた</span> : null}</p><p className="mt-1 text-xs text-muted-foreground">{profile.clinic_id ? clinicNames.get(profile.clinic_id) : "店舗未設定"}</p></div>
+                    <div><p className="font-semibold">{profile.full_name}{profile.id === currentUserId ? <span className="ml-2 text-xs font-normal text-primary">あなた</span> : null}{!profile.is_active ? <Badge className="ml-2">利用停止</Badge> : null}</p><p className="mt-1 text-xs text-muted-foreground">{profile.clinic_id ? clinicNames.get(profile.clinic_id) : "店舗未設定"}</p></div>
                     <div className="flex items-center gap-2">
-                      {isOwner ? <Button variant="outline" onClick={() => startProfileEdit(profile)}><Pencil className="size-4" />編集</Button> : null}
-                      {isOwner ? (
+                      {isOwner && profile.is_active ? <Button variant="outline" onClick={() => startProfileEdit(profile)}><Pencil className="size-4" />編集</Button> : null}
+                      {isOwner && profile.is_active ? (
                         <select value={profile.role} onChange={(event) => void post({ action: "changeRole", profileId: profile.id, role: event.target.value }, "権限を変更しました。")} className="h-10 rounded-xl border bg-white px-3 text-sm"><option value="owner">オーナー</option><option value="manager">店長</option><option value="staff">スタッフ</option></select>
                       ) : <Badge>{profile.role}</Badge>}
+                      {isOwner && profile.id !== currentUserId && profile.role !== "owner" ? profile.is_active ? (
+                        <Button variant="outline" onClick={() => setDeletingProfile(profile.id)}><Trash2 className="size-4" />削除</Button>
+                      ) : (
+                        <Button variant="outline" disabled={saving} onClick={() => void post({ action: "setProfileActive", profileId: profile.id, isActive: true }, "スタッフを復元しました。")}><RotateCcw className="size-4" />復元</Button>
+                      ) : null}
                     </div>
                   </div>
                 )}
+                {deletingProfile === profile.id ? (
+                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+                    <p className="text-sm font-semibold text-red-900">このスタッフを削除しますか？</p>
+                    <p className="mt-1 text-xs leading-5 text-red-800">ログインを停止します。過去の録音・添削結果・学習データは保持され、あとから復元できます。</p>
+                    <div className="mt-3 flex gap-2">
+                      <Button variant="destructive" disabled={saving} onClick={() => void post({ action: "setProfileActive", profileId: profile.id, isActive: false }, "スタッフを削除しました。過去の添削結果は保持されています。").then((ok) => ok && setDeletingProfile(null))}><Trash2 className="size-4" />削除する</Button>
+                      <Button variant="outline" onClick={() => setDeletingProfile(null)}><X className="size-4" />キャンセル</Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ))}
           </CardContent>
