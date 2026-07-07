@@ -28,6 +28,13 @@ function createLineMessage(fullName: string, link: string, type: InvitationLink[
   return `${fullName}さん\n整体AIコーチの${purpose}リンクです。\n以下のリンクを開いて、パスワードを設定してください。\n${link}`;
 }
 
+function createLineAuthUrl(requestUrl: string, tokenHash: string, type: InvitationLink["type"]) {
+  const url = new URL("/auth/line", new URL(requestUrl).origin);
+  url.searchParams.set("type", type);
+  url.searchParams.set("token_hash", tokenHash);
+  return url.toString();
+}
+
 export async function GET() {
   const { supabase, context } = await getAuthContext();
   if (!context || !canManage(context.role)) return NextResponse.json({ error: "管理権限がありません。" }, { status: 403 });
@@ -104,7 +111,7 @@ export async function POST(request: Request) {
           email,
           options: { redirectTo }
         });
-        if (recoveryError || !linkData.properties?.action_link) {
+        if (recoveryError || !linkData.properties?.hashed_token) {
           return NextResponse.json({ error: `再設定リンクを発行できませんでした: ${recoveryError?.message ?? "リンクが空です。"}` }, { status: 500 });
         }
 
@@ -119,10 +126,11 @@ export async function POST(request: Request) {
           expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
         }, { onConflict: "organization_id,email" });
 
+        const lineAuthUrl = createLineAuthUrl(request.url, linkData.properties.hashed_token, "recovery");
         const invitationLink: InvitationLink = {
           type: "recovery",
-          url: linkData.properties.action_link,
-          lineMessage: createLineMessage(fullName, linkData.properties.action_link, "recovery")
+          url: lineAuthUrl,
+          lineMessage: createLineMessage(fullName, lineAuthUrl, "recovery")
         };
 
         return NextResponse.json({ ok: true, message: "登録済みスタッフ用のパスワード再設定リンクを発行しました。", invitationLink });
@@ -140,14 +148,15 @@ export async function POST(request: Request) {
         data: { organization_id: context.organizationId, clinic_id: clinicId, full_name: fullName, role }
       }
     });
-    if (error || !linkData.properties?.action_link) {
+    if (error || !linkData.properties?.hashed_token) {
       return NextResponse.json({ error: `招待リンクを発行できませんでした: ${error?.message ?? "リンクが空です。"}` }, { status: 500 });
     }
     await supabase.from("staff_invitations").upsert({ organization_id: context.organizationId, clinic_id: clinicId, email, full_name: fullName, role, invited_by: context.userId, accepted_at: null, expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() }, { onConflict: "organization_id,email" });
+    const lineAuthUrl = createLineAuthUrl(request.url, linkData.properties.hashed_token, "invite");
     const invitationLink: InvitationLink = {
       type: "invite",
-      url: linkData.properties.action_link,
-      lineMessage: createLineMessage(fullName, linkData.properties.action_link, "invite")
+      url: lineAuthUrl,
+      lineMessage: createLineMessage(fullName, lineAuthUrl, "invite")
     };
     return NextResponse.json({ ok: true, message: "新規スタッフ用の招待リンクを発行しました。", invitationLink });
   }
