@@ -3,6 +3,12 @@ import { canManage, getAuthContext } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase-admin";
 import type { UserRole } from "@/lib/types";
 
+type InvitationLink = {
+  type: "invite" | "recovery";
+  url: string;
+  lineMessage: string;
+};
+
 async function findUserByEmail(email: string) {
   const admin = createAdminClient();
 
@@ -15,6 +21,11 @@ async function findUserByEmail(email: string) {
   }
 
   return null;
+}
+
+function createLineMessage(fullName: string, link: string, type: InvitationLink["type"]) {
+  const purpose = type === "invite" ? "利用開始" : "パスワード再設定";
+  return `${fullName}さん\n整体AIコーチの${purpose}リンクです。\n以下のリンクを開いて、パスワードを設定してください。\n${link}`;
 }
 
 export async function GET() {
@@ -49,6 +60,7 @@ export async function POST(request: Request) {
     const role = (["manager", "staff"].includes(String(body.role)) ? String(body.role) : "staff") as UserRole;
     if (!email || !fullName || !clinicId) return NextResponse.json({ error: "氏名、メール、店舗を入力してください。" }, { status: 400 });
     const admin = createAdminClient();
+    const redirectTo = `${new URL(request.url).origin}/auth/complete?next=/invite`;
 
     const { data: clinic } = await admin.from("clinics").select("id").eq("id", clinicId).eq("organization_id", context.organizationId).maybeSingle();
     if (!clinic) return NextResponse.json({ error: "招待先の店舗が見つかりません。" }, { status: 400 });
@@ -87,10 +99,14 @@ export async function POST(request: Request) {
         });
         if (metadataError) return NextResponse.json({ error: `スタッフ情報を更新できませんでした: ${metadataError.message}` }, { status: 500 });
 
-        const { error: recoveryError } = await admin.auth.resetPasswordForEmail(email, {
-          redirectTo: `${new URL(request.url).origin}/auth/callback?next=/invite`
+        const { data: linkData, error: recoveryError } = await admin.auth.admin.generateLink({
+          type: "recovery",
+          email,
+          options: { redirectTo }
         });
-        if (recoveryError) return NextResponse.json({ error: `再設定メールを送信できませんでした: ${recoveryError.message}` }, { status: 500 });
+        if (recoveryError || !linkData.properties?.action_link) {
+          return NextResponse.json({ error: `再設定リンクを発行できませんでした: ${recoveryError?.message ?? "リンクが空です。"}` }, { status: 500 });
+        }
 
         await admin.from("staff_invitations").upsert({
           organization_id: context.organizationId,
@@ -103,20 +119,37 @@ export async function POST(request: Request) {
           expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
         }, { onConflict: "organization_id,email" });
 
-        return NextResponse.json({ ok: true, message: "登録済みスタッフへパスワード設定メールを再送しました。" });
+        const invitationLink: InvitationLink = {
+          type: "recovery",
+          url: linkData.properties.action_link,
+          lineMessage: createLineMessage(fullName, linkData.properties.action_link, "recovery")
+        };
+
+        return NextResponse.json({ ok: true, message: "登録済みスタッフ用のパスワード再設定リンクを発行しました。", invitationLink });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "ユーザー情報を確認できませんでした。";
       return NextResponse.json({ error: `招待を確認できませんでした: ${message}` }, { status: 500 });
     }
 
-    const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${new URL(request.url).origin}/auth/callback?next=/invite`,
-      data: { organization_id: context.organizationId, clinic_id: clinicId, full_name: fullName, role }
+    const { data: linkData, error } = await admin.auth.admin.generateLink({
+      type: "invite",
+      email,
+      options: {
+        redirectTo,
+        data: { organization_id: context.organizationId, clinic_id: clinicId, full_name: fullName, role }
+      }
     });
-    if (error) return NextResponse.json({ error: `招待できませんでした: ${error.message}` }, { status: 500 });
+    if (error || !linkData.properties?.action_link) {
+      return NextResponse.json({ error: `招待リンクを発行できませんでした: ${error?.message ?? "リンクが空です。"}` }, { status: 500 });
+    }
     await supabase.from("staff_invitations").upsert({ organization_id: context.organizationId, clinic_id: clinicId, email, full_name: fullName, role, invited_by: context.userId, accepted_at: null, expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() }, { onConflict: "organization_id,email" });
-    return NextResponse.json({ ok: true, message: "招待メールを送信しました。" });
+    const invitationLink: InvitationLink = {
+      type: "invite",
+      url: linkData.properties.action_link,
+      lineMessage: createLineMessage(fullName, linkData.properties.action_link, "invite")
+    };
+    return NextResponse.json({ ok: true, message: "新規スタッフ用の招待リンクを発行しました。", invitationLink });
   }
 
   if (action === "setProfileActive") {

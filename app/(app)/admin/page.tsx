@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Check, Loader2, Pencil, Plus, RotateCcw, Save, Shield, Trash2, UserPlus, X } from "lucide-react";
+import { Building2, Check, Copy, ExternalLink, Loader2, Pencil, Plus, RotateCcw, Save, Shield, Trash2, UserPlus, X } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import type { UserRole } from "@/lib/types";
 type Organization = { id: string; name: string };
 type Clinic = { id: string; name: string; address: string | null };
 type Profile = { id: string; clinic_id: string | null; full_name: string; role: UserRole; is_active: boolean };
+type InvitationLink = { type: "invite" | "recovery"; url: string; lineMessage: string };
 
 export default function AdminPage() {
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -34,6 +35,7 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
+  const [invitationLink, setInvitationLink] = useState<InvitationLink | null>(null);
   const [deletingProfile, setDeletingProfile] = useState<string | null>(null);
   const clinicNames = useMemo(() => new Map(clinics.map((clinic) => [clinic.id, clinic.name])), [clinics]);
   const isOwner = currentRole === "owner";
@@ -61,6 +63,7 @@ export default function AdminPage() {
 
   async function post(body: Record<string, unknown>, success: string) {
     setMessage("");
+    setInvitationLink(null);
     setSaving(true);
     const response = await fetch("/api/admin", {
       method: "POST",
@@ -83,10 +86,31 @@ export default function AdminPage() {
   }
 
   async function invite() {
-    if (await post({ action: "invite", fullName, email, clinicId, role: inviteRole }, "招待メールを送信しました。期限切れだった場合も、新しいリンクが有効です。")) {
+    setMessage("");
+    setInvitationLink(null);
+    setSaving(true);
+    const response = await fetch("/api/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "invite", fullName, email, clinicId, role: inviteRole })
+    });
+    const json = await response.json();
+    setMessageType(response.ok ? "success" : "error");
+    setMessage(response.ok ? String(json.message ?? "LINE送信用リンクを発行しました。") : json.error ?? "処理に失敗しました。");
+    if (response.ok) {
+      setInvitationLink(json.invitationLink as InvitationLink);
+      await load();
       setFullName("");
       setEmail("");
     }
+    setSaving(false);
+  }
+
+  async function copyLineMessage() {
+    if (!invitationLink) return;
+    await navigator.clipboard.writeText(invitationLink.lineMessage);
+    setMessageType("success");
+    setMessage("LINEに貼り付ける文面をコピーしました。");
   }
 
   function startClinicEdit(clinic: Clinic) {
@@ -159,8 +183,21 @@ export default function AdminPage() {
             <Input type="email" placeholder="メールアドレス" value={email} onChange={(event) => setEmail(event.target.value)} />
             <select value={clinicId} onChange={(event) => setClinicId(event.target.value)} className="h-12 w-full rounded-2xl border bg-white px-4">{clinics.map((clinic) => <option key={clinic.id} value={clinic.id}>{clinic.name}</option>)}</select>
             <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as UserRole)} className="h-12 w-full rounded-2xl border bg-white px-4"><option value="staff">スタッフ</option><option value="manager">店長</option></select>
-            <Button onClick={invite} disabled={saving || !email || !fullName || !clinicId}><UserPlus className="size-4" />招待・再設定メールを送る</Button>
-            <p className="text-xs leading-5 text-muted-foreground">新規スタッフには招待メール、登録済みスタッフにはパスワード設定メールを送信します。期限切れの場合も同じ内容で再送できます。</p>
+            <Button onClick={invite} disabled={saving || !email || !fullName || !clinicId}><UserPlus className="size-4" />LINE送信用リンクを発行</Button>
+            <p className="text-xs leading-5 text-muted-foreground">新規スタッフには招待リンク、登録済みスタッフにはパスワード再設定リンクを発行します。メールは送信しません。</p>
+            {invitationLink ? (
+              <div className="space-y-3 rounded-2xl border bg-muted/30 p-4">
+                <div>
+                  <p className="text-sm font-semibold">{invitationLink.type === "invite" ? "新規スタッフ用リンク" : "登録済みスタッフ用リンク"}</p>
+                  <p className="mt-1 break-all text-xs text-muted-foreground">{invitationLink.url}</p>
+                </div>
+                <textarea readOnly value={invitationLink.lineMessage} className="min-h-32 w-full resize-none rounded-2xl border bg-white p-3 text-sm leading-6" />
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button type="button" onClick={copyLineMessage}><Copy className="size-4" />LINE文面をコピー</Button>
+                  <a className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border bg-white px-5 text-sm font-semibold transition duration-200 hover:bg-muted" href={`https://line.me/R/msg/text/?${encodeURIComponent(invitationLink.lineMessage)}`} target="_blank" rel="noreferrer"><ExternalLink className="size-4" />LINEで送る</a>
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
